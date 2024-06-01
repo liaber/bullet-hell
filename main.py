@@ -26,17 +26,26 @@ def loadLevel(level, tileset):
     with open(f'{PATH}Levels/{level}') as txt:
         level = txt.read()
     objects = []
-    objects.append(player)
-    print(level)
-    y=0
+    level = level.split("\n")
+    map = []
     for row in level:
+        map.append(list(row))
+    y=0
+    for row in map:
         x=0
-        for col in level:
-            if col == "\n":
-                break
-            Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[int(col)])
+        for tile in row:
+            if tile == "4":
+                Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[int(tile)],collider=False)
+            else:
+                Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[int(tile)],collider=True)
             x+=1
         y+=1
+    objects.append(player)
+
+def Draw(camera):
+    sortedObj = sorted(objects, key=lambda x: x.pos.y, reverse=True)
+    for object in sortedObj:
+        object.Draw(camera)
 
 class AnimationController:
     def __init__(self, spriteSheet, spriteSize=Vector2(TILESIZE), animation=0, frame=0, frameGap=175):
@@ -172,7 +181,7 @@ tileset = TileSet("tileset.png")
 
 #wall = Object(Vector2(16,16),Vector2(16,16),texture=tileset.tiles[0])
 
-player = Player(Vector2(),Vector2(-16,-16),"player.png")
+player = Player(Vector2(16,16),Vector2(16,16),"player.png")
 
 camera = Camera(Vector2(0,0),player)#lambda x:-(x**2)+(x*2)
 
@@ -199,10 +208,10 @@ while True:
     camera.Update(dt)
     display.fill((255,255,255))
     for object in objects:
-        object.Draw(camera)
         object.Physics(0.1, dt)
         if isinstance(object, AnimationController):
             object.Update(t,dt)
+    Draw(camera)
 
     screen.blit(pygame.transform.scale_by(display,2),(0,0))
     pygame.display.update()
