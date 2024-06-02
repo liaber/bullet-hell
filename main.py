@@ -41,7 +41,6 @@ def loadLevel(level, tileset):
             x+=1
         y+=1
     objects.append(player)
-
 def Draw(camera):
     for object in objects:
         if object.pos.y < player.pos.y:
