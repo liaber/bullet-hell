@@ -43,9 +43,14 @@ def loadLevel(level, tileset):
     objects.append(player)
 
 def Draw(camera):
-    sortedObj = sorted(objects, key=lambda x: x.pos.y, reverse=True)
-    for object in sortedObj:
-        object.Draw(camera)
+    for object in objects:
+        if object.pos.y < player.pos.y:
+            object.Draw(camera)
+    player.Draw(camera)
+    for object in objects:
+        if object.pos.y >= player.pos.y:
+            object.Draw(camera)
+    
 
 class AnimationController:
     def __init__(self, spriteSheet, spriteSize=Vector2(TILESIZE), animation=0, frame=0, frameGap=175):
