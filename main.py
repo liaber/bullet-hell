@@ -2,9 +2,9 @@ import pygame, sys, math
 from const import *
 from pygame.math import Vector2
 
-WIDTH, HEIGHT = 300, 200
+WIDTH, HEIGHT, SCALE = 300, 200, 4
 pygame.init()
-screen = pygame.display.set_mode((WIDTH*2, HEIGHT*2),vsync=1)
+screen = pygame.display.set_mode((WIDTH*SCALE, HEIGHT*SCALE),vsync=1)
 display = pygame.surface.Surface((WIDTH,HEIGHT))
 clock = pygame.time.Clock()
 fps = 60
@@ -29,27 +29,42 @@ def loadLevel(level, tileset):
     level = level.split("\n")
     map = []
     for row in level:
-        map.append(list(row))
+        map.append(list(row.split(",")))
     y=0
     for row in map:
         x=0
         for tile in row:
-            if tile == "4":
-                Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[int(tile)],collider=False)
-            else:
-                Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[int(tile)],collider=True)
+            if tile != "-1":
+                if tile == "4":
+                    Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[tile],collider=False)
+                else:
+                    Object(Vector2(x*TILESIZE, y*TILESIZE),Vector2(TILESIZE),texture=tileset.tiles[tile])
+            print(objects)
             x+=1
         y+=1
+    player.pos=Vector2(TILESIZE*2)
     objects.append(player)
+
 def Draw(camera):
+    playerOverlap = []
     for object in objects:
-        if object.pos.y < player.pos.y:
+        if object.pos.y < player.pos.y and object != player.weapon:
             object.Draw(camera)
+    for object in objects:
+        if object.pos.y >= player.pos.y+14 and object != player.weapon and object != player:
+            object.Draw(camera)
+        else:
+            playerOverlap.append(object)
+    for object in playerOverlap:
+        object.Draw(camera)
     player.Draw(camera)
-    for object in objects:
-        if object.pos.y >= player.pos.y:
-            object.Draw(camera)
+    player.weapon.Draw(camera)
     
+def WorldToScreenPoint(camera, point):
+    return (point - camera.pos)*4
+
+def ScreenToWorldPoint(camera, point):
+    return (point + camera.pos)/4
 
 class AnimationController:
     def __init__(self, spriteSheet, spriteSize=Vector2(TILESIZE), animation=0, frame=0, frameGap=175):
@@ -94,7 +109,7 @@ class AnimationController:
 
 objects = []
 class Object:
-    def __init__(self, pos, size, velo=Vector2(), texture=(255,0,0), collider=True):
+    def __init__(self, pos, size, velo=Vector2(), texture=(255,0,0), collider=True, rot=0):
         self.pos = pos
         self.size = size
         self.velo = velo
@@ -104,6 +119,7 @@ class Object:
             self.texture = texture
         
         self.collider = collider
+        self.rot = rot
         objects.append(self)
 
     def rect(self):
@@ -112,13 +128,16 @@ class Object:
     def center(self):
         return Vector2(self.pos.x+(self.size.x/2),self.pos.y+(self.size.y/2))
     
+    def SetCenter(self, pos):
+        self.pos = pos - (self.size/2)
+    
     def Draw(self, camera):
         if isinstance(self, AnimationController):
-            display.blit(self.getFrame(), self.pos-camera.pos)
+            display.blit(pygame.transform.rotate(self.getFrame(),math.degrees(self.rot)), self.pos-camera.pos)
         elif isinstance(self.texture, tuple):
             pygame.draw.rect(display, self.texture, pygame.Rect(self.pos.x-camera.pos.x,self.pos.y-camera.pos.y,self.size.x,self.size.y))
         elif isinstance(self.texture, pygame.Surface):
-            display.blit(self.texture, self.pos-camera.pos)
+            display.blit(pygame.transform.rotate(self.texture,math.degrees(-self.rot)), self.pos-camera.pos)
 
     def Physics(self, friction, dt):
         if self.collider == True:
@@ -141,9 +160,10 @@ class Object:
                         self.pos.y = object.pos.y + object.size.y
 
 class Player(Object, AnimationController):
-    def __init__(self, pos, size, spriteSheet, velo=Vector2(), texture=(255,0,0), animation=0, frame=0, frameGap=175, spriteSize=Vector2(TILESIZE)):
-        Object.__init__(self,pos,size,velo,texture)
+    def __init__(self, pos, size, spriteSheet, weapon=None, velo=Vector2(), texture=(255,0,0), animation=0, frame=0, frameGap=175, spriteSize=Vector2(TILESIZE),collider=True):
+        Object.__init__(self,pos,size,velo,texture,collider)
         AnimationController.__init__(self,spriteSheet,spriteSize,animation,frame,frameGap)
+        self.weapon = weapon
 
     def Update(self,time,dt):
         self.UpdateFrame(time,dt)
@@ -173,29 +193,64 @@ class Camera:
 
 class TileSet:
     def __init__(self, set, tileSize=TILESIZE):
-        self.tiles = []
+        self.tiles = {}
         set = pygame.image.load(f'{PATH}Assets/{set}').convert_alpha()
         for i in range(int(set.get_width()/tileSize)):
             surf = pygame.Surface(Vector2(tileSize))
             surf.set_colorkey((0,0,0))
             surf.blit(set,Vector2(-i*tileSize,0))
-            self.tiles.append(surf)
+            self.tiles[f'{i}'] = surf.copy()
 
-tileset = TileSet("tileset.png")  
+class Weapon(Object, AnimationController):
+    def __init__(self, pos, size, spriteSheet, type, damage, range, bulletImg=None, velo=Vector2(), texture=(255,0,0), animation=0, frame=0, frameGap=175, spriteSize=Vector2(TILESIZE),collider=False):
+        Object.__init__(self,pos,size,velo,texture,collider)
+        AnimationController.__init__(self,spriteSheet,spriteSize,animation,frame,frameGap)
+        self.type = type
+        self.damage = damage
+        self.range = range
+        if self.type == 'ranged':
+            self.bullets = []
+            self.bulletImg = bulletImg
+        
+
+    def Attack(self):
+        if self.type == 'melee':
+            self.SetAnimation(1)
+        if self.type == 'ranged':
+            self.SetAnimation(1)
+
+    def Update(self, time, dt):
+        if self.animation == 1 and self.frame == len(self.animations[self.animation])-1:
+            self.SetAnimation(0)
+        if self.type == 'ranged':
+            dir = WorldToScreenPoint(camera, self.center()) - Vector2(pygame.mouse.get_pos())
+            self.rot = math.atan((-dir.y)/dir.x)+(math.pi)
+            if dir.x < 0:
+                self.rot += math.pi
+            self.SetCenter(Vector2(math.cos(-self.rot)*15,math.sin(-self.rot)*15)+player.center())
+            '''if self.rot >= math.pi/2 and self.rot <= math.pi*1.5:
+                self.flipX = True
+            else:
+                self.flipX = False'''
+        self.UpdateFrame(time, dt)
+
+tileset = TileSet("tileset.png")
 
 #wall = Object(Vector2(16,16),Vector2(16,16),texture=tileset.tiles[0])
 
-player = Player(Vector2(16,16),Vector2(16,16),"player.png")
+player = Player(Vector2(16,16),Vector2(16,16),"player.png", weapon=Weapon(Vector2(0,0),Vector2(TILESIZE),"stapler.png","ranged",10,5,"staple",frameGap=50))
 
 camera = Camera(Vector2(0,0),player)#lambda x:-(x**2)+(x*2)
 
-loadLevel("1.txt",tileset)
+loadLevel("1.csv",tileset)
 
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            player.weapon.Attack()
 
     keys = pygame.key.get_pressed()
     if keys[pygame.K_UP]:
@@ -210,14 +265,17 @@ while True:
     
     
     camera.Update(dt)
-    display.fill((255,255,255))
+    display.fill((45,51,66))
     for object in objects:
         object.Physics(0.1, dt)
         if isinstance(object, AnimationController):
             object.Update(t,dt)
     Draw(camera)
 
-    screen.blit(pygame.transform.scale_by(display,2),(0,0))
+    pygame.draw.circle(screen, (255,0,0), WorldToScreenPoint(camera, player.weapon.center()),5)
+    pygame.draw.circle(screen, (0,0,255), Vector2(pygame.mouse.get_pos()),5)
+
+    screen.blit(pygame.transform.scale_by(display,SCALE),(0,0))
     pygame.display.update()
     dt = clock.tick(fps)
     t += dt
